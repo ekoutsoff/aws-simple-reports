@@ -10,6 +10,7 @@ import pandas as pd
 import os
 import argparse
 
+
 access_key = os.environ.get("ACCESS_KEY")
 secret_key = os.environ.get("SECRET_KEY")
 
@@ -30,17 +31,20 @@ def parser_args():
 
 
 def check_params(args):
-    # Check if token is given
-    if "days" in args:
+    # Check if args ar valid
+    if "days" in args and args.days <= 14:
         r_days = args.days
     else:
-        raise ValueError('Provide days as an argument --days')
+        raise ValueError('Provide days as an argument --days (less or equal to 14 days)')
 
-    if "akey" in args and "skey" in args:
+    if "akey" in args and "skey" in args and args.akey and args.skey:
         a_key = args.akey
         s_key = args.skey
     else:
-        raise ValueError('Access key and Secret key must be supplied as an argument --akey --skey')
+        raise ValueError('Access key and Secret key must be supplied '
+                         'as an argument --akey --skey '
+                         'or in environment variables as "ACCESS_KEY" & "SECRET_KEY" ')
+
     return r_days, a_key, s_key
 
 
@@ -48,14 +52,12 @@ def api_call():
     cd = boto3.client('ce', region_name='us-east-1',
                       aws_access_key_id=access_key,
                       aws_secret_access_key=secret_key)
+    print()
 
     now = datetime.datetime.utcnow()
-    print('Today: ', now)
-
     start = (now - datetime.timedelta(days=current_args.days)).strftime('%Y-%m-%d')
-    print('Start Date: ', start)
     end = now.strftime('%Y-%m-%d')
-    print('End Date: ', end)
+    print(f'\t\t | Today: {now}\t|\tStart Date: {start}\t|\tEnd Date: {end}\t |')
 
     # GetCostAndUsageWithResources
     data = cd.get_cost_and_usage_with_resources(TimePeriod={'Start': start, 'End': end},
@@ -69,27 +71,23 @@ def api_call():
 
 def read_data(data):
     list_of_data = data['ResultsByTime']
-    amounts = []
-    dates = []
-    resources = []
-    dic = {}
+    resources_costs = []
+
     for i in list_of_data:
-        for group in i['Groups']:
-            resources.append(group['Keys'][0])
-            print('Group keys')
-            print(group['Keys'][0])
-            amounts.append(group['Metrics']['UnblendedCost']['Amount'])
-            dates.append(datetime.datetime.strptime(i['TimePeriod']['Start'][:10], '%Y-%m-%d'))
+        for cost in i['Groups']:
+            dic = {'Date': datetime.datetime.strptime(i['TimePeriod']['Start'][:10], '%Y-%m-%d'),
+                   'Resource': cost['Keys'][0],
+                   'Amount': cost['Metrics']['UnblendedCost']['Amount']}
+            resources_costs.append(dic)
 
-        dic = {'Date': dates, 'Resource': resources, 'Amount': amounts}
-    return dic
+    return resources_costs
 
 
-def write_xls_pd(dic, now):
-    file_path = 'c:\\Users\\ekoutsoff\\Desktop\\AWS\\Costs\\pyCosts\\' + 'ResourcesCosts ' + str(
+def write_xls_pd(list_of_costs, now):
+    file_path = 'c:\\Users\\ekoutsoff\\Documents\\myWork\\AWS\\Costs\\pyCosts\\' + 'ResourcesCosts ' + str(
         now.strftime('%Y-%m-%d')) + '.xlsx'
 
-    df = pd.DataFrame.from_dict(dic)
+    df = pd.DataFrame(list_of_costs)
 
     writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
 
@@ -103,8 +101,8 @@ def write_xls_pd(dic, now):
 current_args = parser_args()
 report_days, aws_access_key, aws_secret_key = check_params(current_args)
 report_data, date_now, date_start, date_end = api_call()
-data_dict = read_data(report_data)
-path_of_file = write_xls_pd(data_dict, date_now)
+cost_data = read_data(report_data)
+path_of_file = write_xls_pd(cost_data, date_now)
 print()
 print(path_of_file)
 print()
