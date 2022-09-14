@@ -3,26 +3,26 @@ Purpose
 
 Download the Credentials Report from AWS Identity and Access Management (IAM) accounts.
 """
+import os
 import datetime
 import argparse
+import sys
 import boto3
 import json
 import csv
 import logging
-import pprint
-import sys
+
 import time
-import os
+
 import pandas as pd
 from botocore.exceptions import ClientError
-
-
 
 access_key = os.environ.get("ACCESS_KEY")
 secret_key = os.environ.get("SECRET_KEY")
 logger = logging.getLogger(__name__)
 
-def parserargs():
+
+def parser_args():
     # Get command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--akey', type=str, default=access_key, help="Access key needed!")
@@ -30,6 +30,7 @@ def parserargs():
 
     args = parser.parse_args()
     return args
+
 
 def check_params(args):
     # Check if token is given
@@ -44,12 +45,14 @@ def check_params(args):
         return access_key, secret_key
     return access_key, secret_key
 
+
 def api_call():
-    #Access IAM AWS Service
+    # Access IAM AWS Service
     iam = boto3.client('iam',
                        aws_access_key_id=access_key,
                        aws_secret_access_key=secret_key)
     return iam
+
 
 def date_element():
     now = datetime.datetime.utcnow()
@@ -60,6 +63,7 @@ def date_element():
     print('iDate: ', idate)
     print('fDate: ', fdate)
     return idate, fdate
+
 
 def list_aliases(iam):
     """
@@ -105,10 +109,9 @@ def get_summary(iam):
 
 def generate_credential_report(iam):
     """
-    Starts generation of a credentials report about the current account. After
-    calling this function to generate the report, call get_credential_report
-    to get the latest report. A new report can be generated a minimum of four hours
-    after the last one was generated.
+    Begin the generation of a credentials report for the current account.
+    After that call the get_credential_report to get the latest report.
+    A new report can be generated at least four hours after the the last one was generated.
     """
     try:
         response = iam.generate_credential_report()
@@ -123,7 +126,7 @@ def generate_credential_report(iam):
 
 def get_credential_report(iam):
     """
-    Gets the most recently generated credentials report about the current account.
+    Get the recently generated credentials report.
 
     :return: The credentials report.
     """
@@ -138,18 +141,18 @@ def get_credential_report(iam):
 
 
 def save_credentials_report(dict_resp, idate, new_path):
-    #Convert the dict of containing the credentials report to a string
-    #Convert the first line to  and remove it from the list
-    str_resp =  dict_resp["Content"].decode('utf-8').split("\n")
+    # Convert the dict of containing the credentials report to a string
+    # Convert the first line to and remove it from the list
+    str_resp = dict_resp["Content"].decode('utf-8').split("\n")
     str_headers = map(str, (str_resp.pop(0)).rstrip(',').split(','))
-    list_headers = list(str_headers)   #keys of the new dict
+    list_headers = list(str_headers)  # keys of the new dict
 
     new_dict = {}
     list_dict_records = []
 
-    #Convert the sequence of strings seperated by comma to a list
-    #Convert the list to a dict with keys from list_headers and values from the list
-    #Append the list with the dict
+    # Convert the sequence of strings seperated by comma to a list
+    # Convert the list to a dict with keys from list_headers and values from the list
+    # Append the list with the dict
     for each_string in str_resp:
         list_elements = each_string.split(",")
         # method 1
@@ -164,10 +167,10 @@ def save_credentials_report(dict_resp, idate, new_path):
 
         list_dict_records.append(dict_record)
 
-    #Set the file name
-    #open the file for writting
-    #Convert the dictionary to CSV with header by using the dictwriter() method of CSV module
-    file_name = new_path + "IAM-"+ idate + ".csv"
+    # Set the file name
+    # open the file for writting
+    # Convert the dictionary to CSV with header by using the dictwriter() method of CSV module
+    file_name = new_path + "IAM-" + idate + ".csv"
     with open(file_name, 'w', newline="\n") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=list_headers)
         writer.writeheader()
@@ -176,7 +179,7 @@ def save_credentials_report(dict_resp, idate, new_path):
     # Convert the CSV file to XLSX file using Panda
     # Read csv with read_csv() into a Dataframe
     df = pd.read_csv(file_name)
-    file_name = "IAM-"+ idate + ".xlsx"
+    file_name = new_path + "IAM-" + idate + ".xlsx"
     # Convert the Dataframe to_excel()
     df.to_excel(file_name, sheet_name="IAM", index=False)
 
@@ -191,6 +194,7 @@ def save_pwd_policy(iam, idate, new_path):
     with open(file_name, "w") as f:
         f.write(str(pwd_policy))
 
+
 def save_summary(iam, idate, new_path):
     summary = get_summary(iam)
     print()
@@ -200,12 +204,13 @@ def save_summary(iam, idate, new_path):
     with open(file_name, "w") as f:
         f.write(json.dumps(summary, default=str, indent=2))
 
+
 def define_directory(fdate):
     # Directory
     directory = "AWS Reports " + fdate + "\\"
 
     # Parent Directory path
-    parent_directory = "c:\\Users\\ekoutsoff\\Desktop\\AWS\\Monthly\\Reports\\"
+    parent_directory = "c:\\Users\\ekoutsoff\\Documents\\myWork\\AWS\\Monthly\\Reports\\"
     # Path
     new_path = os.path.join(parent_directory, directory)
 
@@ -217,10 +222,11 @@ def define_directory(fdate):
         print("Folder  " + directory.upper() + "  already exist!")
 
         x = input("Continue?")
-        if x =="y" or x =="Y":
+        if x == "y" or x == "Y":
             return new_path
         else:
             sys.exit(0)
+
 
 def print_password_policy(iam):
     """
@@ -250,19 +256,16 @@ def print_password_policy(iam):
         return printed
 
 
-
 if __name__ == "__main__":
-    args = parserargs()
+    args = parser_args()
     access_key, secret_key = check_params(args)
 
     iam = api_call()
-    #dict of all users
+    # dict of all users
     # users = iam.list_users()
     idate, fdate = date_element()
 
     new_path = define_directory(fdate)
-
-
 
     report_state = None
     while report_state != 'COMPLETE':
@@ -287,7 +290,3 @@ if __name__ == "__main__":
     list_aliases(iam)
     save_summary(iam, idate, new_path)
     save_pwd_policy(iam, idate, new_path)
-
-
-
-
