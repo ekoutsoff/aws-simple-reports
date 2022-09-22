@@ -10,19 +10,15 @@ import sys
 import boto3
 import json
 import csv
-import logging
-
 import time
-
 import pandas as pd
 from botocore.exceptions import ClientError
 
-access_key = os.environ.get("ACCESS_KEY")
-secret_key = os.environ.get("SECRET_KEY")
-logger = logging.getLogger(__name__)
-
 
 def parser_args():
+    access_key = os.environ.get("ACCESS_KEY")
+    secret_key = os.environ.get("SECRET_KEY")
+
     # Get command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--akey', type=str, default=access_key, help="Access key needed!")
@@ -36,33 +32,33 @@ def check_params(args):
     # Check if token is given
 
     if "akey" in args and "skey" in args:
-        access_key = args.akey
-        secret_key = args.skey
+        a_key = args.akey
+        s_key = args.skey
     else:
         raise ValueError('Access key and Secret key must be supplied as an argument --akey --skey')
 
-    if access_key and secret_key:
-        return access_key, secret_key
-    return access_key, secret_key
+    if a_key and s_key:
+        return a_key, s_key
+    return a_key, s_key
 
 
-def api_call():
+def iam_connect(a_key, s_key):
     # Access IAM AWS Service
     iam = boto3.client('iam',
-                       aws_access_key_id=access_key,
-                       aws_secret_access_key=secret_key)
+                       aws_access_key_id=a_key,
+                       aws_secret_access_key=s_key)
     return iam
 
 
 def date_element():
     now = datetime.datetime.utcnow()
 
-    idate = now.strftime('%Y-%m-%d')
-    fdate = now.strftime("%d%B%Y")
+    iam_date = now.strftime('%Y-%m-%d')
+    formatted_date = now.strftime("%d%B%Y")
 
-    print('iDate: ', idate)
-    print('fDate: ', fdate)
-    return idate, fdate
+    print('iam Date: ', iam_date)
+    print('formatted Date: ', formatted_date)
+    return iam_date, formatted_date
 
 
 def list_aliases(iam):
@@ -76,11 +72,11 @@ def list_aliases(iam):
         aliases = response.get('AccountAliases', [])
 
         if len(aliases) > 0:
-            logger.info("Got aliases for your account: %s.", ','.join(aliases))
+            print("Got aliases for your account: ", ','.join(aliases))
         else:
-            logger.info("Got no aliases for your account.")
+            print("Got no aliases for your account.")
     except ClientError:
-        logger.exception("Couldn't list aliases for your account.")
+        print("Couldn't list aliases for your account.")
         raise
     else:
         print()
@@ -99,9 +95,9 @@ def get_summary(iam):
     """
     try:
         summary = iam.get_account_summary()
-        logger.debug(summary["SummaryMap"])
+        # print(summary["SummaryMap"])
     except ClientError:
-        logger.exception("Couldn't get a summary for your account.")
+        print("Couldn't get a summary for your account.")
         raise
     else:
         return summary["SummaryMap"]
@@ -115,10 +111,9 @@ def generate_credential_report(iam):
     """
     try:
         response = iam.generate_credential_report()
-        logger.info("Generating credentials report for your account. "
-                    "Current state is %s.", response['State'])
+        print("Generating credentials report for your account. ""Current state is %s.", response['State'])
     except ClientError:
-        logger.exception("Couldn't generate a credentials report for your account.")
+        print("Couldn't generate a credentials report for your account.")
         raise
     else:
         return response
@@ -132,25 +127,25 @@ def get_credential_report(iam):
     """
     try:
         response = iam.get_credential_report()
-        logger.debug(response['Content'])
+        # print(response['Content'])
     except ClientError:
-        logger.exception("Couldn't get credentials report.")
+        print("Couldn't get credentials report.")
         raise
     else:
         return response
 
 
-def save_credentials_report(dict_resp, idate, new_path):
+def save_credentials_report(responses, file_date, new_path):
     # Convert the dict of containing the credentials report to a string
     # Convert the first line to and remove it from the list
-    str_resp = dict_resp["Content"].decode('utf-8').split("\n")
+    str_resp = responses["Content"].decode('utf-8').split("\n")
     str_headers = map(str, (str_resp.pop(0)).rstrip(',').split(','))
     list_headers = list(str_headers)  # keys of the new dict
 
     new_dict = {}
     list_dict_records = []
 
-    # Convert the sequence of strings seperated by comma to a list
+    # Convert the sequence of strings separated by comma to a list
     # Convert the list to a dict with keys from list_headers and values from the list
     # Append the list with the dict
     for each_string in str_resp:
@@ -168,9 +163,9 @@ def save_credentials_report(dict_resp, idate, new_path):
         list_dict_records.append(dict_record)
 
     # Set the file name
-    # open the file for writting
+    # open the file for writing
     # Convert the dictionary to CSV with header by using the dictwriter() method of CSV module
-    file_name = new_path + "IAM-" + idate + ".csv"
+    file_name = new_path + "IAM-" + file_date + ".csv"
     with open(file_name, 'w', newline="\n") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=list_headers)
         writer.writeheader()
@@ -179,35 +174,35 @@ def save_credentials_report(dict_resp, idate, new_path):
     # Convert the CSV file to XLSX file using Panda
     # Read csv with read_csv() into a Dataframe
     df = pd.read_csv(file_name)
-    file_name = new_path + "IAM-" + idate + ".xlsx"
+    file_name = new_path + "IAM-" + file_date + ".xlsx"
     # Convert the Dataframe to_excel()
     df.to_excel(file_name, sheet_name="IAM", index=False)
 
 
-def save_pwd_policy(iam, idate, new_path):
+def save_pwd_policy(iam, file_date, new_path):
     pwd_policy = print_password_policy(iam)
     print()
     print("-------------------------PASSWORD POLICY-------------------------")
     print(pwd_policy)
 
-    file_name = new_path + "PasswordPolicy-" + idate + ".txt"
+    file_name = new_path + "PasswordPolicy-" + file_date + ".txt"
     with open(file_name, "w") as f:
         f.write(str(pwd_policy))
 
 
-def save_summary(iam, idate, new_path):
+def save_summary(iam, file_date, new_path):
     summary = get_summary(iam)
     print()
     print("-----------------------------SUMMARY-----------------------------")
     print(json.dumps(summary, default=str, indent=2))
-    file_name = new_path + "Summary-" + idate + ".txt"
+    file_name = new_path + "Summary-" + file_date + ".txt"
     with open(file_name, "w") as f:
         f.write(json.dumps(summary, default=str, indent=2))
 
 
-def define_directory(fdate):
+def define_directory(file_date):
     # Directory
-    directory = "AWS Reports " + fdate + "\\"
+    directory = "AWS Reports " + file_date + "\\"
 
     # Parent Directory path
     parent_directory = "c:\\Users\\ekoutsoff\\Documents\\myWork\\AWS\\Monthly\\Reports\\"
@@ -215,7 +210,7 @@ def define_directory(fdate):
     new_path = os.path.join(parent_directory, directory)
 
     # Create the directory
-    ## If folder doesn't exists, create it ##
+    # If folder doesn't exists, create it
     if not os.path.isdir(new_path):
         os.mkdir(new_path)
     else:
@@ -250,26 +245,25 @@ def print_password_policy(iam):
         if error.response['Error']['Code'] == 'NoSuchEntity':
             print("The account does not have a password policy set.")
         else:
-            logger.exception("Couldn't get account password policy.")
+            print("Couldn't get account password policy.")
             raise
     else:
         return printed
 
 
 if __name__ == "__main__":
-    args = parser_args()
-    access_key, secret_key = check_params(args)
+    current_args = parser_args()
+    aws_access_key, aws_secret_key = check_params(current_args)
 
-    iam = api_call()
-    # dict of all users
-    # users = iam.list_users()
-    idate, fdate = date_element()
+    iam_api = iam_connect(aws_access_key, aws_secret_key)
 
-    new_path = define_directory(fdate)
+    yymmd_date, dmmyy_date = date_element()
+
+    file_path = define_directory(dmmyy_date)
 
     report_state = None
     while report_state != 'COMPLETE':
-        cred_report_response = generate_credential_report(iam)
+        cred_report_response = generate_credential_report(iam_api)
         old_report_state = report_state
         report_state = cred_report_response['State']
         if report_state != old_report_state:
@@ -284,9 +278,9 @@ if __name__ == "__main__":
         time.sleep(1)
     print()
 
-    dict_resp = get_credential_report(iam)
-    save_credentials_report(dict_resp, idate, new_path)
+    dict_resp = get_credential_report(iam_api)
+    save_credentials_report(dict_resp, yymmd_date, file_path)
 
-    list_aliases(iam)
-    save_summary(iam, idate, new_path)
-    save_pwd_policy(iam, idate, new_path)
+    list_aliases(iam_api)
+    save_summary(iam_api, yymmd_date, file_path)
+    save_pwd_policy(iam_api, yymmd_date, file_path)

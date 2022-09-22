@@ -35,6 +35,7 @@ def check_params(args):
     if "days" in args and args.days <= 14:
         r_days = args.days
     else:
+        r_days = 14
         raise ValueError('Provide days as an argument --days (less or equal to 14 days)')
 
     if "akey" in args and "skey" in args and args.akey and args.skey:
@@ -48,32 +49,30 @@ def check_params(args):
     return r_days, a_key, s_key
 
 
-def api_call():
+def get_cost_data(req_days, acc_key, sec_key):
     cd = boto3.client('ce', region_name='us-east-1',
-                      aws_access_key_id=access_key,
-                      aws_secret_access_key=secret_key)
+                      aws_access_key_id=acc_key,
+                      aws_secret_access_key=sec_key)
     print()
 
     now = datetime.datetime.utcnow()
-    start = (now - datetime.timedelta(days=current_args.days)).strftime('%Y-%m-%d')
+    start = (now - datetime.timedelta(days=req_days)).strftime('%Y-%m-%d')
     end = now.strftime('%Y-%m-%d')
     print(f'\t\t | Today: {now}\t|\tStart Date: {start}\t|\tEnd Date: {end}\t |')
 
     # GetCostAndUsageWithResources
-    data = cd.get_cost_and_usage_with_resources(TimePeriod={'Start': start, 'End': end},
-                                                Granularity='DAILY', Metrics=['UnblendedCost'],
-                                                Filter={'Dimensions':
-                                                            {'Key': 'SERVICE',
-                                                             'Values': ['Amazon Elastic Compute Cloud - Compute']}},
-                                                GroupBy=[{'Type': 'DIMENSION', 'Key': 'RESOURCE_ID'}])
-    return data, now, start, end
+    return_data = cd.get_cost_and_usage_with_resources(TimePeriod={'Start': start, 'End': end},
+                                                       Granularity='DAILY', Metrics=['UnblendedCost'],
+                Filter={'Dimensions': {'Key': 'SERVICE', 'Values': ['Amazon Elastic Compute Cloud - Compute']}},
+                GroupBy=[{'Type': 'DIMENSION', 'Key': 'RESOURCE_ID'}])
+    return return_data, now
 
 
 def read_data(data):
-    list_of_data = data['ResultsByTime']
+
     resources_costs = []
 
-    for i in list_of_data:
+    for i in data['ResultsByTime']:
         for cost in i['Groups']:
             dic = {'Date': datetime.datetime.strptime(i['TimePeriod']['Start'][:10], '%Y-%m-%d'),
                    'Resource': cost['Keys'][0],
@@ -84,25 +83,23 @@ def read_data(data):
 
 
 def write_xls_pd(list_of_costs, now):
-    file_path = 'c:\\Users\\ekoutsoff\\Documents\\myWork\\AWS\\Costs\\pyCosts\\' + 'ResourcesCosts ' + str(
+    xlsx_file = 'c:\\Users\\ekoutsoff\\Documents\\myWork\\AWS\\Costs\\pyCosts\\' + 'ResourcesCosts ' + str(
         now.strftime('%Y-%m-%d')) + '.xlsx'
 
     df = pd.DataFrame(list_of_costs)
-
-    writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
-
+    writer = pd.ExcelWriter(xlsx_file, engine='xlsxwriter')
     df.to_excel(writer, index=False)
-
     writer.save()
 
-    return file_path
+    return xlsx_file
 
 
-current_args = parser_args()
-report_days, aws_access_key, aws_secret_key = check_params(current_args)
-report_data, date_now, date_start, date_end = api_call()
-cost_data = read_data(report_data)
-path_of_file = write_xls_pd(cost_data, date_now)
-print()
-print(path_of_file)
-print()
+if __name__ == "__main__":
+    current_args = parser_args()
+    report_days, aws_access_key, aws_secret_key = check_params(current_args)
+    report_data, date_now = get_cost_data(report_days, aws_access_key, aws_secret_key)
+    cost_data = read_data(report_data)
+    path_of_file = write_xls_pd(cost_data, date_now)
+    print()
+    print(path_of_file)
+    print()
